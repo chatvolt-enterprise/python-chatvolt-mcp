@@ -7,6 +7,7 @@ load_dotenv()
 
 CHATVOLT_API_KEY = os.getenv("CHATVOLT_API_KEY")
 CHATVOLT_BASE_URL = os.getenv("CHATVOLT_BASE_URL", "https://api.chatvolt.ai")
+VOLTAPI_BASE_URL = os.getenv("VOLTAPI_BASE_URL")
 
 _request_auth_token: ContextVar[str | None] = ContextVar("request_auth_token", default=None)
 

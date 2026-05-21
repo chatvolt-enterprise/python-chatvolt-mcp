@@ -17,6 +17,7 @@ from .definitions.interactive import TOOLS as INTERACTIVE_TOOLS
 from .definitions.mercadolivre import TOOLS as MERCADOLIVRE_TOOLS
 from .definitions.telegram import TOOLS as TELEGRAM_TOOLS
 from .definitions.twilio import TOOLS as TWILIO_TOOLS
+from .definitions.voltapi import TOOLS as VOLTAPI_TOOLS
 from .definitions.whatsapp_official import TOOLS as WHATSAPP_OFFICIAL_TOOLS
 from .definitions.whitelist import TOOLS as WHITELIST_TOOLS
 from .definitions.zapi import TOOLS as ZAPI_TOOLS
@@ -40,6 +41,7 @@ TOOLS_DEFINITION: dict[str, dict[str, Any]] = {
     **WHATSAPP_OFFICIAL_TOOLS,
     **INTERACTIVE_TOOLS,
     **TWILIO_TOOLS,
+    **VOLTAPI_TOOLS,
     **MERCADOLIVRE_TOOLS,
     **ZAPPER_TOOLS,
     **TELEGRAM_TOOLS,

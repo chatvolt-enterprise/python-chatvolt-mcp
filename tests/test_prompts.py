@@ -118,6 +118,7 @@ def test_prompts_dict_contains_all():
         "whatsapp_outreach",
         "contact_enrichment",
         "agent_health_check",
+        "create_voltapi_function",
     ]
     assert set(expected) == set(PROMPTS.keys())
 

@@ -79,11 +79,12 @@ def test_server_capabilities_basic():
 async def test_list_resources():
     """Test listing resources."""
     resources = await handle_list_resources()
-    assert len(resources) == 3
+    assert len(resources) == 4
     names = [r.name for r in resources]
     assert "Available LLM Models" in names
     assert "All MCP Tools" in names
     assert "All Workflow Prompts" in names
+    assert "VoltAPI Script Writing Guide" in names
 
 
 @pytest.mark.asyncio
@@ -118,13 +119,14 @@ async def test_read_resource_unknown():
 async def test_list_resource_templates():
     """Test listing resource templates."""
     templates = await handle_list_resource_templates()
-    assert len(templates) == 5
+    assert len(templates) == 6
     template_names = [t.name for t in templates]
     assert "Agent Configuration" in template_names
     assert "Conversation Details" in template_names
     assert "Contact Profile" in template_names
     assert "Dispatch Details" in template_names
     assert "Datastore Configuration" in template_names
+    assert "VoltAPI Function Details" in template_names
 
 
 @pytest.mark.asyncio

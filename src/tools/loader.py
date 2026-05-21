@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 from mcp import types
 
-from src.config import CHATVOLT_BASE_URL, get_auth_token
+from src.config import CHATVOLT_BASE_URL, VOLTAPI_BASE_URL, get_auth_token
 from src.tools.definitions import TOOLS_DEFINITION
 
 MAX_RETRIES = 3
@@ -682,6 +682,55 @@ TOOL_ANNOTATIONS = {
         "idempotentHint": False,
         "openWorldHint": True,
     },
+    "voltapi_create_function": {
+        "title": "Create VoltAPI Function",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "voltapi_list_functions": {
+        "title": "List VoltAPI Functions",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+    "voltapi_get_function": {
+        "title": "Get VoltAPI Function",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+    "voltapi_rename_function": {
+        "title": "Rename VoltAPI Function",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+    "voltapi_toggle_function": {
+        "title": "Toggle VoltAPI Function",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+    "voltapi_delete_function": {
+        "title": "Delete VoltAPI Function",
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+    "voltapi_execute_function": {
+        "title": "Execute VoltAPI Function",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
     "populate_dispatch_queue": {
         "title": "Populate Dispatch Queue",
         "readOnlyHint": False,
@@ -990,12 +1039,43 @@ class ToolRegistry:
                 if key in args_copy and isinstance(args_copy[key], list):
                     args_copy[key] = ",".join(map(str, args_copy[key]))
 
-        if method == "GET":
-            query_params.update(args_copy)
+        # ---- VoltAPI proxy handling ----
+        is_voltapi = tool_info.get("voltapi", False)
+        if is_voltapi:
+            if not VOLTAPI_BASE_URL:
+                return _structured_result(
+                    json.dumps({
+                        "error": True,
+                        "status": 501,
+                        "message": "VOLTAPI_BASE_URL not configured. Set it in .env to enable VoltAPI tools.",
+                    }),
+                    is_error=True,
+                )
+            declared_method = method
+            # Always POST to the VoltAPI proxy
+            method = "POST"
+            # Build URL with ?path= query parameter
+            url = f"{VOLTAPI_BASE_URL}?path={path}"
+            # For non-POST operations, pass _method in body
+            if declared_method != "POST":
+                json_body["_method"] = declared_method
+            # Special case: voltapi_execute_function uses 'payload' as the request body
+            if name == "voltapi_execute_function" and "payload" in args_copy:
+                json_body = args_copy.pop("payload")
+                if not isinstance(json_body, dict):
+                    json_body = {"value": json_body}
+            elif name == "voltapi_list_functions":
+                # No body args expected, just _method
+                pass
+            else:
+                json_body.update(args_copy)
         else:
-            json_body.update(args_copy)
+            if method == "GET":
+                query_params.update(args_copy)
+            else:
+                json_body.update(args_copy)
 
-        url = f"{CHATVOLT_BASE_URL}{path}"
+            url = f"{CHATVOLT_BASE_URL}{path}"
 
         headers = {"Content-Type": "application/json"}
         # get_models doesn't need auth according to the request
@@ -1042,14 +1122,20 @@ class ToolRegistry:
                         timeout=60.0,
                     )
             else:
-                return await client.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    params=query_params,
-                    json=json_body if json_body else None,
-                    timeout=30.0,
-                )
+                kwargs = {
+                    "method": method,
+                    "url": url,
+                    "headers": headers,
+                    # json={} is falsy in Python, but for voltapi tools we must
+                    # send even an empty body; for non-voltapi tools, empty body -> None
+                    "json": json_body if (is_voltapi or json_body) else None,
+                    "timeout": 30.0,
+                }
+                # Only pass params when non-empty — httpx clobbers existing query
+                # string in the URL when params={} is passed.
+                if query_params:
+                    kwargs["params"] = query_params
+                return await client.request(**kwargs)
 
         last_exception = None
         async with httpx.AsyncClient() as client:

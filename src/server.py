@@ -88,6 +88,12 @@ RESOURCES = {
         description="Complete list of all available workflow prompts with their arguments",
         mimeType="application/json",
     ),
+    "chatvolt://voltapi-guide": types.Resource(
+        uri="chatvolt://voltapi-guide",
+        name="VoltAPI Script Writing Guide",
+        description="Complete reference for writing VoltAPI sandboxed JavaScript functions — available globals, limitations, best practices, and examples.",
+        mimeType="text/markdown",
+    ),
 }
 
 
@@ -125,6 +131,68 @@ async def handle_read_resource(uri: str) -> str | bytes:
                 ],
             }
         return json.dumps(prompts_info, indent=2)
+    elif uri == "chatvolt://voltapi-guide":
+        return """# VoltAPI — Guia de Escrita de Scripts\n\n""
+        "## Estrutura Básica\n\n"
+        "Todo script deve ser uma função assíncrona que recebe `input` e retorna um valor:\n\n"
+        "```javascript\n"
+        "async (input) => {\n"
+        "  // seu código aqui\n"
+        "  return { resultado: \"ok\" };\n"
+        "};\n"
+        "```\n\n"
+        "## Ambiente de Execução\n\n"
+        "O código roda em um V8 isolate isolado (`isolated-vm`) com:\n\n"
+        "| Recurso | Disponível? |\n"
+        "|---|---|\n"
+        "| `input` | ✅ O payload enviado |\n"
+        "| `console.log / .error / .warn / .info` | ✅ Logs capturados e retornados |\n"
+        "| `fetch(url, options)` | ✅ Com proteção SSRF |\n"
+        "| `voltApi.get(url)` | ✅ GET autenticado para o Chatvolt |\n"
+        "| `voltApi.post(url, body)` | ✅ POST autenticado para o Chatvolt |\n"
+        "| `async / await` | ✅ |\n"
+        "| `Promise` | ✅ |\n"
+        "| `JSON.stringify / parse` | ✅ |\n"
+        "| `Math`, `Date`, `RegExp`, `Array`, `Object`, `Map`, `Set` | ✅ |\n"
+        "| `require()` | ❌ Bloqueado |\n"
+        "| `import / export` | ❌ Bloqueado |\n"
+        "| `fs`, `path`, `process`, `child_process` | ❌ Bloqueado |\n"
+        "| `setTimeout`, `setInterval` | ❌ Bloqueado |\n"
+        "| Acesso a IPs privados | ❌ Bloqueado pelo SSRF |\n\n"
+        "## Globais Disponíveis\n\n"
+        "### `input`\n"
+        "O payload da requisição de execução.\n\n"
+        "### `console`\n"
+        "Os logs são capturados e retornados na resposta de execução no array `logs`.\n\n"
+        "### `fetch(url, options)`\n"
+        "Fetch padrão com proteção SSRF — não acessa IPs privados/internos.\n\n"
+        "### `voltApi.get(url)`\n"
+        "GET com Authorization já incluso para APIs internas do Chatvolt.\n\n"
+        "### `voltApi.post(url, body)`\n"
+        "POST com Authorization + Content-Type já inclusos para APIs internas.\n\n"
+        "## Limitações\n\n"
+        "- Timeout: 10s na VM, 60s no polling\n"
+        "- Memória: 128MB por execução\n"
+        "- Sem módulos Node.js\n"
+        "- Sem setTimeout/setInterval\n\n"
+        "## Boas Práticas\n\n"
+        "1. Valide o input sempre\n"
+        "2. Trate erros com try/catch\n"
+        "3. Use console.log para debugar\n"
+        "4. Prefira retornar objetos estruturados\n"
+        "5. Evite loops infinitos ou operações pesadas (limite de 10s)\n"
+        """
+    elif uri.startswith("chatvolt://voltapi/"):
+        import json
+        function_name = uri.removeprefix("chatvolt://voltapi/")
+        # Delegate to voltapi_get_function via the tool registry
+        result = await registry.call_tool("voltapi_get_function", {"name": function_name})
+        text = result[0].text if result else json.dumps({"error": "Function not found"})
+        try:
+            parsed = json.loads(text)
+            return json.dumps(parsed, indent=2)
+        except (json.JSONDecodeError, TypeError):
+            return text
     else:
         raise ValueError(f"Unknown resource: {uri}")
 
@@ -161,6 +229,12 @@ async def handle_list_resource_templates() -> list[types.ResourceTemplate]:
             uriTemplate="chatvolt://datastore/{datastoreId}",
             name="Datastore Configuration",
             description="Get detailed information about a specific datastore",
+            mimeType="application/json",
+        ),
+        types.ResourceTemplate(
+            uriTemplate="chatvolt://voltapi/{functionName}",
+            name="VoltAPI Function Details",
+            description="Get the source code and metadata of a VoltAPI sandboxed function by name",
             mimeType="application/json",
         ),
     ]

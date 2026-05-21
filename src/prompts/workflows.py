@@ -1,6 +1,7 @@
 from mcp import types
 
 PROMPTS = {
+
     "onboard_new_user": types.Prompt(
         name="onboard_new_user",
         description="A guide to creating a contact and sending a welcome message.",
@@ -53,6 +54,13 @@ PROMPTS = {
         description="Check agent status, view recent conversations, and identify issues.",
         arguments=[
             types.PromptArgument(name="agent_id", description="Agent ID to check", required=True),
+        ],
+    ),
+    "create_voltapi_function": types.Prompt(
+        name="create_voltapi_function",
+        description="Guided workflow to write, test, and deploy a VoltAPI sandboxed JavaScript function.",
+        arguments=[
+            types.PromptArgument(name="function_name", description="Desired function name", required=False),
         ],
     ),
 }
@@ -207,6 +215,32 @@ def get_prompt_message(name: str, arguments: dict) -> types.GetPromptResult:
                         f"3. Check for unresolved conversations that may need attention.\n"
                         f"4. Review agent tools with 'get_agent_tools'.\n"
                         f"5. Report findings and suggest improvements.",
+                    ),
+                )
+            ],
+        )
+    elif name == "create_voltapi_function":
+        function_name = arguments.get("function_name", "my-function")
+        return types.GetPromptResult(
+            description="VoltAPI Function Creation Workflow",
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=f"Let's create a VoltAPI sandboxed function called '{function_name}'.\n\n"
+                        "Available globals in the sandbox:\n"
+                        "- input: the payload you send on execution\n"
+                        "- console.log/error/warn/info: captured and returned in logs[]\n"
+                        "- fetch(url, options): HTTP client with SSRF protection\n"
+                        "- voltApi.get(url): GET autenticado para APIs internas do Chatvolt\n"
+                        "- voltApi.post(url, body): POST autenticado para APIs internas\n\n"
+                        "Limitations: no require(), fs, path, process, setTimeout/setInterval.\n"
+                        "Max 10s execution, 128MB memory.\n\n"
+                        "Please tell me what this function should do, and I'll help you:\n"
+                        "1. Design the JavaScript code\n"
+                        "2. Create the function with voltapi_create_function\n"
+                        "3. Test it with voltapi_execute_function",
                     ),
                 )
             ],
