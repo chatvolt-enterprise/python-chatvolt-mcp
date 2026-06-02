@@ -8,7 +8,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.routing import Route
+from starlette.routing import Mount
 
 from src.config import set_request_auth_token
 from src.prompts.workflows import PROMPTS, get_prompt_message
@@ -440,10 +440,9 @@ async def handle_get_prompt(name: str, arguments: dict[str, str] | None) -> type
     return get_prompt_message(name, arguments or {})
 
 
-# StreamableHTTP with stateless=True and json_response=True:
-# - stateless: no session tracking, each request is independent
-# - json_response: returns JSON body directly (not SSE stream)
-# This is what Gemini CLI (antigravity-client) expects.
+# StreamableHTTP transport (stateless + JSON response).
+# No SSE, no sessions — each HTTP request is independent.
+# Clients POST JSON-RPC messages and receive JSON-RPC responses.
 session_manager = StreamableHTTPSessionManager(
     app=app,
     json_response=True,
@@ -453,74 +452,65 @@ session_manager = StreamableHTTPSessionManager(
 
 @contextlib.asynccontextmanager
 async def lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
+    """Lifespan context: starts and stops the Streamable HTTP session manager."""
     async with session_manager.run():
         yield
 
 
-class MCPApp:
+async def mcp_asgi_handler(scope, receive, send):
     """
-    Raw ASGI app for the /sse endpoint.
-    Injects Accept header before delegating to StreamableHTTPSessionManager.
-    Extracts and stores Authorization header for request-scoped access.
+    ASGI handler for MCP requests.
+
+    - Extracts and stores the Authorization header for request-scoped access.
+    - Delegates to StreamableHTTPSessionManager which handles the protocol.
+    - Mounted at /sse for backward compatibility (uses Streamable HTTP, not SSE).
+    - Returns raw ASGI responses (the session manager already sends them).
     """
+    if scope["type"] != "http":
+        return
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            headers = list(scope.get("headers", []))
+    # Extract and store auth token from request
+    headers = dict(scope.get("headers", []) or [])
+    auth_value = headers.get(b"authorization", b"").decode("utf-8", errors="ignore")
+    if auth_value:
+        if auth_value.lower().startswith("bearer "):
+            token = auth_value[7:]
+        else:
+            token = auth_value
+        set_request_auth_token(token)
 
-            auth_values = [v for k, v in headers if k.lower() == b"authorization"]
-            if auth_values:
-                auth_header = auth_values[0].decode("utf-8")
-                if auth_header.startswith("Bearer ") or auth_header.startswith("bearer "):
-                    token = auth_header[7:]
-                else:
-                    token = auth_header
-                set_request_auth_token(token)
-
-            accept_values = [v for k, v in headers if k.lower() == b"accept"]
-            needs_inject = not accept_values or (
-                b"application/json" not in accept_values[0] and b"text/event-stream" not in accept_values[0]
-            )
-            if needs_inject:
-                headers = [(k, v) for k, v in headers if k.lower() != b"accept"]
-                headers.append((b"accept", b"application/json, text/event-stream"))
-                scope = dict(scope)
-                scope["headers"] = headers
-
-        await session_manager.handle_request(scope, receive, send)
+    await session_manager.handle_request(scope, receive, send)
 
 
-mcp_app = MCPApp()
-
-starlette_app = Starlette(
+_starlette_app = Starlette(
     lifespan=lifespan,
     routes=[
-        # Mount (not Route) so handle_mcp gets raw ASGI (scope, receive, send)
-        # Route would wrap it in a Request object and cause a TypeError.
-        # We strip trailing slashes manually in MCPApp so no 307 redirect occurs.
-        # The MCP SDK's handle_request doesn't care about path.
-        Route("/sse", endpoint=lambda req: None),  # placeholder for OpenAPI
+        # Mount the MCP ASGI handler at /sse/ (trailing slash required by Mount).
+        # Using Mount (not Route) because mcp_asgi_handler is a raw ASGI app
+        # that sends its own response via the ASGI send() callable.
+        Mount("/sse/", app=mcp_asgi_handler),
     ],
     middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])],
 )
 
-# Override the ASGI app so all /sse traffic goes to mcp_app directly
-_inner = starlette_app
 
-_MCP_PATHS = {"/sse", "/mcp", "/", ""}
+class _CompatASGI:
+    """
+    Thin ASGI wrapper that normalizes /sse → /sse/ so both paths work.
 
-class RootApp:
-    """Routes /sse, /mcp and / (root) to MCPApp, everything else to Starlette."""
+    Starlette's Mount redirects /sse (no trailing slash) to /sse/ with a 307.
+    Many MCP clients don't follow 307 redirects for POST, so we normalize
+    the path at the ASGI level before Starlette sees it.
+    """
+
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
-            path = scope.get("path", "").rstrip("/")
-            if path in _MCP_PATHS:
-                await mcp_app(scope, receive, send)
-                return
-        elif scope["type"] == "lifespan":
-            await _inner(scope, receive, send)
-            return
-        await _inner(scope, receive, send)
+            path = scope.get("path", "")
+            # Normalize /sse → /sse/ so Mount matches without redirecting
+            if path.rstrip("/") == "/sse":
+                scope = dict(scope)
+                scope["path"] = "/sse/"
+        await _starlette_app(scope, receive, send)
 
 
-starlette_app = RootApp()
+starlette_app = _CompatASGI()

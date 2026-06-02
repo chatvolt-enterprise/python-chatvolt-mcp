@@ -4,7 +4,7 @@ An MCP (Model Context Protocol) server for Chatvolt AI, providing tools, resourc
 
 ## Features
 
-- **SSE Transport**: Runs over HTTP using Server-Sent Events.
+- **Streamable HTTP Transport**: Runs over HTTP with JSON-RPC (no SSE, no WebSockets).
 - **81 Tools**: Comprehensive coverage of Chatvolt API endpoints.
 - **Tool Annotations**: Every tool has `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` annotations for safe AI execution.
 - **Dynamic Tool Discovery**: Automatically maps Chatvolt OpenAPI specifications to MCP tools.
@@ -52,17 +52,18 @@ Add the following to your VS Code MCP settings (`.vscode/mcp.json` or user setti
 {
   "servers": {
     "MCP_Chatvolt": {
-      "url": "http://localhost:8000",
+      "url": "http://localhost:8000/sse",
       "type": "http"
     }
   }
 }
 ```
 
-### Claude Desktop / MCP Inspector / Cursor
+### Any MCP Client (Claude Desktop, Cursor, VS Code, OpenCode)
 
-Point your MCP client (e.g., Claude Desktop, Cursor, VS Code) to the SSE endpoint:
-- **URL**: `http://localhost:8000/sse`
+Point your MCP client to the Streamable HTTP endpoint:
+- **URL**: `http://localhost:8000/mcp`
+- **Type**: `http` (Streamable HTTP)
 
 ## Usage with OpenCode
 

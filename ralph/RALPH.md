@@ -23,7 +23,7 @@ You are working on the **Chatvolt MCP Server** - an MCP (Model Context Protocol)
 
 ## Project Structure
 
-Python 3.13 project using `uv` for dependency management. Starlette-based server with StreamableHTTP transport at `/sse`.
+Python 3.13 project using `uv` for dependency management. Starlette-based server with Streamable HTTP transport at `/sse` (backward-compatible path).
 
 Key files:
 - `src/server.py` - Main MCP server (tools, prompts, resources, completions handlers)
